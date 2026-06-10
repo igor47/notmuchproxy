@@ -22,6 +22,23 @@ def test_preflight_search(client: TestClient) -> None:
     assert "authorization" in resp.headers["access-control-allow-headers"].lower()
 
 
+def test_preflight_allows_unanticipated_headers(client: TestClient) -> None:
+    """Clients send headers we can't predict (Open WebUI does); the preflight
+    must echo them back rather than 400 on anything outside an allowlist."""
+    resp = client.options(
+        "/search",
+        headers={
+            "Origin": ORIGIN,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,x-requested-with,x-openwebui-chat",
+        },
+    )
+    assert resp.status_code == 200
+    allowed = resp.headers["access-control-allow-headers"].lower()
+    for header in ("authorization", "x-requested-with", "x-openwebui-chat"):
+        assert header in allowed
+
+
 def test_preflight_mcp_needs_no_auth(client: TestClient) -> None:
     resp = client.options(
         "/mcp/",

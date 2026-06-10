@@ -41,16 +41,10 @@ if _origins := cors_origins():
         CORSMiddleware,
         allow_origins=_origins,
         allow_methods=["GET", "POST"],
-        # wildcard deliberately not used: 'Access-Control-Allow-Headers: *'
-        # does not cover Authorization
-        allow_headers=[
-            "Authorization",
-            "Content-Type",
-            "Accept",
-            "Mcp-Protocol-Version",
-            "Mcp-Session-Id",
-            "Last-Event-Id",
-        ],
+        # starlette echoes the preflight's requested headers for "*" (it never
+        # sends a literal "*", which per spec wouldn't cover Authorization).
+        # Clients send unpredictable extras (e.g. Open WebUI), so don't allowlist.
+        allow_headers=["*"],
         expose_headers=["Mcp-Session-Id"],
         max_age=3600,
     )
