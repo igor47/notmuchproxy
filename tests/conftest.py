@@ -21,7 +21,19 @@ def mail_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def client(mail_root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("NOTMUCHPROXY_API_KEY", API_KEY)
     monkeypatch.setenv("NOTMUCH_DATABASE", str(mail_root))
+    monkeypatch.delenv("NOTMUCHPROXY_EXCLUDE_TAGS", raising=False)
     get_settings.cache_clear()
     # context manager runs the lifespan, which the mounted MCP app needs
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def exclude_client(mail_root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """A client with NOTMUCHPROXY_EXCLUDE_TAGS=spam set."""
+    monkeypatch.setenv("NOTMUCHPROXY_API_KEY", API_KEY)
+    monkeypatch.setenv("NOTMUCH_DATABASE", str(mail_root))
+    monkeypatch.setenv("NOTMUCHPROXY_EXCLUDE_TAGS", "spam")
+    get_settings.cache_clear()
     with TestClient(app) as test_client:
         yield test_client

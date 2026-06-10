@@ -38,6 +38,7 @@ Everything is environment variables:
 | `NOTMUCHPROXY_API_KEY` | yes | the bearer token clients must present |
 | `NOTMUCH_DATABASE` | yes¹ | path to the notmuch database root (the directory containing `.notmuch`); the docker image defaults it to `/mail` |
 | `NOTMUCHPROXY_NOTMUCH_BIN` | no | notmuch executable (default: `notmuch`) |
+| `NOTMUCHPROXY_EXCLUDE_TAGS` | no | comma-separated tags (e.g. `spam,deleted`) whose messages are excluded from *all* results — searches (even explicit `tag:spam` queries), threads, single messages, and the tag list. Useful for noise and for keeping adversarial spam content away from the model. |
 | `NOTMUCHPROXY_CORS_ORIGINS` | no | comma-separated origins allowed for CORS; `*` (the default) allows any origin, empty string disables CORS. Needed when a browser calls the API directly, e.g. tool servers added in Open WebUI's *user* settings. The bearer token remains the actual access control. |
 
 ¹ optional if the host has a notmuch config that already points at the database.

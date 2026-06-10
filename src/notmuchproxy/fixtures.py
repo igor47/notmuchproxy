@@ -119,6 +119,17 @@ def _build_messages() -> list[EmailMessage]:
     lunch.set_content("Tacos at noon?")
     messages.append(lunch)
 
+    # spam, for exercising tag exclusion
+    spam = _email(
+        subject="You have WON the lottery!!!",
+        sender="Prize Dept <winner@spam.example>",
+        to=PRIMARY_EMAIL,
+        date=datetime(2024, 2, 12, 3, 0, tzinfo=UTC),
+        message_id="spam-1@example.com",
+    )
+    spam.set_content("Click here to claim your $1,000,000 prize!")
+    messages.append(spam)
+
     return messages
 
 
@@ -153,6 +164,7 @@ def create_archive(dest: Path) -> Path:
     notmuch("new")
     notmuch("tag", "+billing", "--", "subject:invoice")
     notmuch("tag", "+newsletter", "--", "from:news@example.com")
+    notmuch("tag", "+spam", "-inbox", "--", "from:spam.example")
 
     return mail_root
 

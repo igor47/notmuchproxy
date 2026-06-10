@@ -48,10 +48,25 @@ def _empty_config() -> str:
 class Notmuch:
     def __init__(self, settings: Settings) -> None:
         self._bin = settings.notmuch_bin
+        self._exclude_tags = settings.exclude_tag_list
         self._env = dict(os.environ)
         if settings.notmuch_database:
             self._env["NOTMUCH_DATABASE"] = settings.notmuch_database
             self._env.setdefault("NOTMUCH_CONFIG", _empty_config())
+
+    def _with_excludes(self, query: str) -> str:
+        """Rewrite a query so messages carrying an excluded tag never match,
+        even when the query asks for them explicitly."""
+        if not self._exclude_tags:
+            return query
+        excluded = " or ".join(f'tag:"{tag}"' for tag in self._exclude_tags)
+        if query.strip() in ("", "*"):
+            # '*' is only match-all as the entire query; it can't be wrapped
+            return f"not ( {excluded} )"
+        return f"( {query} ) and not ( {excluded} )"
+
+    def _is_excluded(self, message: Message) -> bool:
+        return any(tag in message.tags for tag in self._exclude_tags)
 
     def _run(self, *args: str) -> str:
         argv = [self._bin, *args]
@@ -72,7 +87,9 @@ class Notmuch:
         return self._run("--version").strip()
 
     def count(self, query: str, output: str = "messages") -> int:
-        return int(self._run("count", f"--output={output}", "--", query).strip())
+        return int(
+            self._run("count", f"--output={output}", "--", self._with_excludes(query)).strip()
+        )
 
     def search(self, query: str, limit: int, offset: int, sort: str) -> list[ThreadSummary]:
         results = self._run_json(
@@ -83,7 +100,7 @@ class Notmuch:
             f"--offset={offset}",
             f"--sort={sort}",
             "--",
-            query,
+            self._with_excludes(query),
         )
         return [
             ThreadSummary(
@@ -100,7 +117,9 @@ class Notmuch:
         ]
 
     def list_tags(self) -> list[str]:
-        return sorted(self._run_json("search", "--format=json", "--output=tags", "--", "*"))
+        tags = self._run_json("search", "--format=json", "--output=tags", "--", "*")
+        # don't advertise tags whose messages can never be returned
+        return sorted(tag for tag in tags if tag not in self._exclude_tags)
 
     def thread_messages(self, thread_id: str) -> list[Message]:
         """All messages in a thread, oldest first."""
@@ -129,11 +148,14 @@ class Notmuch:
             "--include-html",
             f"--entire-thread={'true' if entire_thread else 'false'}",
             "--",
-            query,
+            self._with_excludes(query),
         )
         messages: list[Message] = []
         for thread in threads:
             _walk_message_forest(thread, depth=0, out=messages)
+        # entire-thread output includes thread context beyond the query match,
+        # so excluded-tag messages must also be filtered here
+        messages = [m for m in messages if not self._is_excluded(m)]
         messages.sort(key=lambda m: m.date)
         return messages
 

@@ -16,7 +16,7 @@ class TestAuth:
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "ok"
-        assert body["message_count"] == 6
+        assert body["message_count"] == 7
 
     def test_openapi_schema_needs_no_token(self, client: TestClient) -> None:
         resp = client.get("/openapi.json")
@@ -30,8 +30,8 @@ class TestSearch:
         resp = client.get("/search", params={"q": "*"}, headers=AUTH)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total"] == 4  # 4 threads (one has 3 messages)
-        assert len(body["threads"]) == 4
+        assert body["total"] == 5  # 5 threads (one has 3 messages)
+        assert len(body["threads"]) == 5
 
     def test_search_by_subject(self, client: TestClient) -> None:
         resp = client.get("/search", params={"q": "subject:invoice"}, headers=AUTH)
@@ -52,7 +52,7 @@ class TestSearch:
         resp = client.get("/search", params={"q": "*", "limit": 2}, headers=AUTH)
         body = resp.json()
         assert len(body["threads"]) == 2
-        assert body["total"] == 4
+        assert body["total"] == 5
 
         resp2 = client.get("/search", params={"q": "*", "limit": 2, "offset": 2}, headers=AUTH)
         body2 = resp2.json()

@@ -22,6 +22,18 @@ class Settings(BaseSettings):
         validation_alias="NOTMUCHPROXY_NOTMUCH_BIN",
         description="notmuch executable to invoke",
     )
+    exclude_tags: str = Field(
+        default="",
+        validation_alias="NOTMUCHPROXY_EXCLUDE_TAGS",
+        description=(
+            "comma-separated tags whose messages are excluded from all results, "
+            "even when queried explicitly (e.g. 'spam,deleted')"
+        ),
+    )
+
+    @property
+    def exclude_tag_list(self) -> list[str]:
+        return [tag.strip() for tag in self.exclude_tags.split(",") if tag.strip()]
 
 
 @lru_cache
