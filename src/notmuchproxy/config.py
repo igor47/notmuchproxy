@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from pydantic import Field
@@ -26,3 +27,15 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # pyright: ignore[reportCallIssue] - fields come from the environment
+
+
+def cors_origins() -> list[str]:
+    """Origins allowed for CORS, from NOTMUCHPROXY_CORS_ORIGINS (comma-separated;
+    '*' for any origin, empty to disable CORS entirely).
+
+    Read directly from the environment rather than Settings because middleware
+    is configured at app construction (import time), before required settings
+    like the API key can be assumed to validate.
+    """
+    raw = os.environ.get("NOTMUCHPROXY_CORS_ORIGINS", "*")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]

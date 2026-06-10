@@ -36,7 +36,7 @@ class BearerAuthMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
+        if scope["type"] == "http" and scope["method"] != "OPTIONS":
             token = Headers(scope=scope).get("authorization", "")
             expected = f"Bearer {get_settings().api_key}"
             if not secrets.compare_digest(token.encode(), expected.encode()):

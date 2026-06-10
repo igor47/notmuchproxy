@@ -5,10 +5,11 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .auth import require_api_key
-from .config import Settings, get_settings
+from .config import Settings, cors_origins, get_settings
 from .models import HealthResponse, SearchResponse, TagsResponse, Thread
 from .models import Message as MessageModel
 from .notmuch import Notmuch, NotmuchError
@@ -31,6 +32,28 @@ app = FastAPI(
     ),
     lifespan=_lifespan,
 )
+
+# Browser-based clients (e.g. tool servers added in Open WebUI's user settings)
+# call the API directly from the browser and need CORS. The bearer token is the
+# actual access control; CORS just lets browsers make the requests.
+if _origins := cors_origins():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_methods=["GET", "POST"],
+        # wildcard deliberately not used: 'Access-Control-Allow-Headers: *'
+        # does not cover Authorization
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Mcp-Protocol-Version",
+            "Mcp-Session-Id",
+            "Last-Event-Id",
+        ],
+        expose_headers=["Mcp-Session-Id"],
+        max_age=3600,
+    )
 
 
 def get_notmuch(settings: Annotated[Settings, Depends(get_settings)]) -> Notmuch:

@@ -38,6 +38,7 @@ Everything is environment variables:
 | `NOTMUCHPROXY_API_KEY` | yes | the bearer token clients must present |
 | `NOTMUCH_DATABASE` | yes¹ | path to the notmuch database root (the directory containing `.notmuch`); the docker image defaults it to `/mail` |
 | `NOTMUCHPROXY_NOTMUCH_BIN` | no | notmuch executable (default: `notmuch`) |
+| `NOTMUCHPROXY_CORS_ORIGINS` | no | comma-separated origins allowed for CORS; `*` (the default) allows any origin, empty string disables CORS. Needed when a browser calls the API directly, e.g. tool servers added in Open WebUI's *user* settings. The bearer token remains the actual access control. |
 
 ¹ optional if the host has a notmuch config that already points at the database.
 
@@ -93,6 +94,11 @@ Admin Settings → Tools → add a tool server:
 
 Open WebUI fetches `/openapi.json` (which is unauthenticated, like `/healthz`)
 to discover the tools, then sends the bearer token on each call.
+
+Tool servers added under **Admin** Settings are called from the Open WebUI
+backend, but ones added in a user's own Settings → Tools are called directly
+from the browser — that path needs CORS, which is enabled for all origins by
+default (lock it down with `NOTMUCHPROXY_CORS_ORIGINS=https://your-webui-host`).
 
 ### Claude Code
 
