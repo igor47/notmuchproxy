@@ -12,7 +12,7 @@ from .auth import require_api_key
 from .config import Settings, cors_origins, get_settings
 from .models import HealthResponse, SearchResponse, TagsResponse, Thread
 from .models import Message as MessageModel
-from .notmuch import Notmuch, NotmuchError
+from .notmuch import InvalidQueryError, Notmuch, NotmuchError
 
 
 @asynccontextmanager
@@ -71,6 +71,20 @@ def notmuch_error_handler(request: Request, exc: NotmuchError) -> JSONResponse:
     )
 
 
+@app.exception_handler(InvalidQueryError)
+def invalid_query_handler(request: Request, exc: InvalidQueryError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": (
+                f"invalid notmuch query: {exc.reason}. "
+                "Fix the query and retry; see the 'q' parameter description of "
+                "search_email for the supported syntax."
+            )
+        },
+    )
+
+
 class SortOrder(StrEnum):
     newest_first = "newest-first"
     oldest_first = "oldest-first"
@@ -106,6 +120,11 @@ def search_email(
 
     Results are conversation threads, not individual messages. Use the
     returned thread_id with get_thread to read the full conversation.
+    The response's 'total' is the full match count; if it exceeds 'limit',
+    page through with 'offset'. Tag names for tag: queries can be
+    discovered with list_tags. A search returning total=0 means nothing
+    matched — try a broader query (fewer terms, or free text instead of
+    exact subject:/from: filters).
     """
     return SearchResponse(
         query=q,
@@ -142,7 +161,12 @@ def get_thread(thread_id: str, nm: NotmuchDep) -> Thread:
     dependencies=[Depends(require_api_key)],
 )
 def get_message(message_id: str, nm: NotmuchDep) -> MessageModel:
-    """Fetch one message by its Message-ID (without angle brackets)."""
+    """Fetch one message by its Message-ID (without angle brackets).
+
+    message_id comes from the message_id field of get_thread results.
+    Prefer get_thread when you want a whole conversation; use this for a
+    single known message.
+    """
     message = nm.message(message_id)
     if message is None:
         raise HTTPException(status_code=404, detail=f"no message with id {message_id!r}")

@@ -73,6 +73,14 @@ class TestSearch:
         assert body["total"] == 0
         assert body["threads"] == []
 
+    def test_invalid_query_is_400_with_reason(self, client: TestClient) -> None:
+        resp = client.get("/search", params={"q": "date:bogus..nonsense"}, headers=AUTH)
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail.startswith("invalid notmuch query:")
+        # the xapian reason is surfaced so the caller can fix the query
+        assert "date specification" in detail
+
 
 class TestThread:
     def _planning_thread_id(self, client: TestClient) -> str:

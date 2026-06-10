@@ -70,6 +70,25 @@ def test_tools_call_search(client: TestClient) -> None:
     assert structured["threads"][0]["subject"] == "Invoice #1234 for January"
 
 
+def test_tools_call_invalid_query_explains_error(client: TestClient) -> None:
+    resp = client.post(
+        "/mcp/",
+        headers=MCP_HEADERS,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "search_email", "arguments": {"q": "date:bogus..nonsense"}},
+        },
+    )
+    result = resp.json()["result"]
+    assert result["isError"]
+    text = result["content"][0]["text"]
+    # the model gets an actionable explanation, not just a status code
+    assert "invalid notmuch query" in text
+    assert "date specification" in text
+
+
 def test_tools_call_thread_roundtrip(client: TestClient) -> None:
     search = _rpc(
         client,

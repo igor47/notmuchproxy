@@ -23,6 +23,19 @@ class NotmuchError(Exception):
         super().__init__(f"notmuch {' '.join(args_)} failed ({returncode}): {self.stderr}")
 
 
+class InvalidQueryError(NotmuchError):
+    """xapian could not parse the query string; the caller should fix the query."""
+
+    def __init__(self, args_: list[str], returncode: int, stderr: str) -> None:
+        super().__init__(args_, returncode, stderr)
+        # xapian reports 'A Xapian exception occurred parsing query: <reason>'
+        self.reason = "could not parse query"
+        for line in stderr.splitlines():
+            if "parsing query:" in line:
+                self.reason = line.split("parsing query:", 1)[1].strip()
+                break
+
+
 @lru_cache
 def _empty_config() -> str:
     """notmuch refuses to run without *some* config file, even when
@@ -47,6 +60,8 @@ class Notmuch:
         except subprocess.TimeoutExpired as exc:
             raise NotmuchError(list(args), -1, "timed out after 30s") from exc
         if result.returncode != 0:
+            if "parsing query" in result.stderr:
+                raise InvalidQueryError(list(args), result.returncode, result.stderr)
             raise NotmuchError(list(args), result.returncode, result.stderr)
         return result.stdout
 
