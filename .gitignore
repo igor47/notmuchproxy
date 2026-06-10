@@ -1,0 +1,23 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# environments
+.venv/
+
+# local dev artifacts
+fixtures/
+
+# tooling caches
+.pytest_cache/
+.ruff_cache/
+.mise.local.toml
+mise.local.toml
+
+# editors
+.idea/
+.vscode/
+*.swp

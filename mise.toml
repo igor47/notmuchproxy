@@ -1,0 +1,68 @@
+[tools]
+python = "3.13"
+uv = "latest"
+
+[env]
+# uv should use mise's python and the project venv
+UV_PYTHON = "{{config_root}}/.venv/bin/python"
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.install]
+description = "Install/sync project dependencies into the venv"
+run = "uv sync --all-groups"
+
+[tasks.check]
+description = "Run all checks in CI mode (ruff lint, ruff format check, pyright)"
+depends = ["check:lint", "check:format", "check:types"]
+
+[tasks."check:lint"]
+description = "Ruff lint (check only)"
+run = "uv run ruff check ."
+
+[tasks."check:format"]
+description = "Ruff format (check only)"
+run = "uv run ruff format --check ."
+
+[tasks."check:types"]
+description = "Pyright type checking"
+run = "uv run pyright"
+
+[tasks."check:fix"]
+description = "Fix everything fixable: ruff lint --fix, ruff format, then pyright"
+run = [
+  "uv run ruff check --fix .",
+  "uv run ruff format .",
+  "uv run pyright",
+]
+
+[tasks.test]
+description = "Run the test suite (requires the notmuch CLI on PATH)"
+run = "uv run pytest {{arg(name='args', var=true, default='')}}"
+
+[tasks.fixtures]
+description = "Generate a local dev maildir + notmuch database under ./fixtures"
+run = "uv run python -m notmuchproxy.fixtures fixtures"
+
+[tasks.dev]
+description = "Run the API locally with auto-reload against the ./fixtures archive"
+depends = ["fixtures"]
+env = { NOTMUCHPROXY_API_KEY = "dev-key", NOTMUCH_DATABASE = "{{config_root}}/fixtures/mail" }
+run = "uv run uvicorn notmuchproxy.main:app --reload --host 127.0.0.1 --port 8000"
+
+[tasks."docker:build"]
+description = "Build the production docker image"
+run = "docker build -t notmuchproxy:dev ."
+
+[tasks."docker:test"]
+description = "Run checks and the test suite inside docker (no local notmuch needed)"
+run = "docker build --target test -t notmuchproxy:test . && docker run --rm notmuchproxy:test"
+
+[tasks."docker:run"]
+description = "Run the production image against ./fixtures on port 8000"
+depends = ["fixtures", "docker:build"]
+run = """
+docker run --rm -p 8000:8000 \
+  -e NOTMUCHPROXY_API_KEY=dev-key \
+  -v {{config_root}}/fixtures/mail:/mail:ro \
+  notmuchproxy:dev
+"""
