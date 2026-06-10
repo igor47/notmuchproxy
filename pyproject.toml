@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "pydantic-settings>=2.7",
+    "fastmcp>=3.4.2",
 ]
 
 [dependency-groups]
@@ -58,3 +59,7 @@ executionEnvironments = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+    # starlette's TestClient warns about a future httpx2 migration; not actionable here
+    "ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning",
+]

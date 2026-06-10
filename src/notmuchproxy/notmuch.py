@@ -42,7 +42,10 @@ class Notmuch:
 
     def _run(self, *args: str) -> str:
         argv = [self._bin, *args]
-        result = subprocess.run(argv, capture_output=True, text=True, env=self._env)
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, env=self._env, timeout=30)
+        except subprocess.TimeoutExpired as exc:
+            raise NotmuchError(list(args), -1, "timed out after 30s") from exc
         if result.returncode != 0:
             raise NotmuchError(list(args), result.returncode, result.stderr)
         return result.stdout

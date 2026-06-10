@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -17,8 +18,10 @@ def mail_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def client(mail_root: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def client(mail_root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("NOTMUCHPROXY_API_KEY", API_KEY)
     monkeypatch.setenv("NOTMUCH_DATABASE", str(mail_root))
     get_settings.cache_clear()
-    return TestClient(app)
+    # context manager runs the lifespan, which the mounted MCP app needs
+    with TestClient(app) as test_client:
+        yield test_client

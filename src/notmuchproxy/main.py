@@ -1,3 +1,5 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from enum import StrEnum
 from typing import Annotated
 
@@ -11,6 +13,14 @@ from .models import HealthResponse, SearchResponse, TagsResponse, Thread
 from .models import Message as MessageModel
 from .notmuch import Notmuch, NotmuchError
 
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncGenerator[None]:
+    # mcp_app is created below, after the routes it derives its tools from
+    async with mcp_app.lifespan(mcp_app):
+        yield
+
+
 app = FastAPI(
     title="notmuchproxy",
     version=__version__,
@@ -19,6 +29,7 @@ app = FastAPI(
         "Search email with notmuch query syntax, then fetch full threads or "
         "individual messages. All endpoints except /healthz require a bearer token."
     ),
+    lifespan=_lifespan,
 )
 
 
@@ -134,3 +145,21 @@ def healthz(nm: NotmuchDep) -> HealthResponse:
         notmuch_version=nm.version(),
         message_count=nm.count("*"),
     )
+
+
+# Expose the same endpoints as MCP tools at /mcp. The tools are derived from
+# the OpenAPI schema, so the REST routes above stay the single source of truth;
+# tool calls are dispatched to them in-process.
+from fastmcp import FastMCP  # noqa: E402
+from starlette.middleware import Middleware  # noqa: E402
+
+from .auth import BearerAuthMiddleware, InternalBearerAuth  # noqa: E402
+
+mcp = FastMCP.from_fastapi(app=app, httpx_client_kwargs={"auth": InternalBearerAuth()})
+mcp_app = mcp.http_app(
+    path="/",
+    stateless_http=True,
+    json_response=True,
+    middleware=[Middleware(BearerAuthMiddleware)],
+)
+app.mount("/mcp", mcp_app)

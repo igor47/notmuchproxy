@@ -1,24 +1,33 @@
 # notmuchproxy
 
-A read-only OpenAPI server over a [notmuch](https://notmuchmail.org/) email archive,
-designed to be used as an [Open WebUI tool server](https://docs.openwebui.com/openapi-servers/)
-so an LLM can search and read your email.
+[![ci](https://github.com/igor47/notmuchproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/igor47/notmuchproxy/actions/workflows/ci.yml)
 
-No UI — API only. The OpenAPI schema is served at `/openapi.json`, which is how
-OpenAPI tool clients (like Open WebUI) discover the available tools.
+Give an LLM read-only access to your email.
 
-## API
+notmuchproxy is a small API server over a [notmuch](https://notmuchmail.org/)
+email archive. It exposes the same four tools two ways:
 
-| Endpoint | Tool | Description |
+- an **OpenAPI/REST API** (schema at `/openapi.json`), usable as an
+  [Open WebUI tool server](https://docs.openwebui.com/openapi-servers/)
+- an **MCP endpoint** (streamable HTTP at `/mcp/`), usable from Claude Code,
+  claude.ai, and any other MCP client
+
+There is no UI and no write path: the server only ever reads the archive, so
+the worst an over-eager LLM can do is search your email too enthusiastically.
+
+## The tools
+
+| Tool | REST endpoint | Description |
 | --- | --- | --- |
-| `GET /search?q=...` | `search_email` | Search threads with notmuch query syntax |
-| `GET /threads/{thread_id}` | `get_thread` | Full thread, plain-text bodies, oldest first |
-| `GET /messages/{message_id}` | `get_message` | Single message by Message-ID |
-| `GET /tags` | `list_tags` | All tags in the archive |
-| `GET /healthz` | — | Unauthenticated health check |
+| `search_email` | `GET /search?q=...` | Search threads with notmuch query syntax (`from:`, `to:`, `subject:`, `tag:`, `date:`, free text) |
+| `get_thread` | `GET /threads/{thread_id}` | Every message in a thread, oldest first, bodies as plain text |
+| `get_message` | `GET /messages/{message_id}` | A single message by Message-ID |
+| `list_tags` | `GET /tags` | All tags in the archive |
 
-All endpoints except `/healthz` and `/openapi.json` require a bearer token:
-`Authorization: Bearer $NOTMUCHPROXY_API_KEY`.
+Plus an unauthenticated `GET /healthz`. Everything else requires
+`Authorization: Bearer $NOTMUCHPROXY_API_KEY` — including the MCP endpoint.
+The MCP tools are derived from the OpenAPI schema at startup, so the two
+surfaces can't drift apart.
 
 ## Configuration
 
@@ -27,14 +36,15 @@ Everything is environment variables:
 | Variable | Required | Description |
 | --- | --- | --- |
 | `NOTMUCHPROXY_API_KEY` | yes | the bearer token clients must present |
-| `NOTMUCH_DATABASE` | yes¹ | path to the notmuch database root (the directory containing `.notmuch`) |
+| `NOTMUCH_DATABASE` | yes¹ | path to the notmuch database root (the directory containing `.notmuch`); the docker image defaults it to `/mail` |
 | `NOTMUCHPROXY_NOTMUCH_BIN` | no | notmuch executable (default: `notmuch`) |
 
-¹ technically optional if the container/host has a notmuch config that already points at the database.
+¹ optional if the host has a notmuch config that already points at the database.
 
-## Running in production (docker)
+## Running in production
 
-Mount your maildir (which must already contain the `.notmuch` index) read-only:
+The server is distributed as a docker image. Mount your maildir — which must
+already contain the `.notmuch` index — read-only at `/mail`:
 
 ```sh
 docker run -d -p 8000:8000 \
@@ -43,14 +53,58 @@ docker run -d -p 8000:8000 \
   ghcr.io/igor47/notmuchproxy:latest
 ```
 
-The image sets `NOTMUCH_DATABASE=/mail` by default. Indexing (`notmuch new`) is
-*not* done by this container — keep running that wherever your mail is delivered.
+Indexing (`notmuch new`) is *not* done by this container — keep running it
+wherever your mail is delivered. The container picks up index updates
+automatically since xapian readers don't block writers.
 
-### Open WebUI setup
+### docker compose, as a non-root user
 
-Admin Settings → Tools → add a tool server with URL `http://your-host:8000`,
-auth type Bearer, key = your `NOTMUCHPROXY_API_KEY`. Open WebUI fetches
-`/openapi.json` to discover the tools.
+The image runs as a built-in non-root user (uid 1000) by default. If your
+maildir is owned by a different user, override `user:` so the container can
+read the mount — no rebuild needed:
+
+```yaml
+services:
+  notmuchproxy:
+    image: ghcr.io/igor47/notmuchproxy:latest
+    restart: unless-stopped
+    # run as the uid/gid that owns your maildir (`id -u`/`id -g`);
+    # omit entirely if uid 1000 can read your mail
+    user: "1000:1000"
+    ports:
+      - "8000:8000"
+    environment:
+      NOTMUCHPROXY_API_KEY: ${NOTMUCHPROXY_API_KEY:?set this in .env}
+    volumes:
+      - /path/to/your/mail:/mail:ro
+```
+
+The app never writes to the archive (and the `:ro` mount enforces that), so
+read permission on the maildir is all it needs.
+
+## Connecting clients
+
+### Open WebUI
+
+Admin Settings → Tools → add a tool server:
+
+- URL: `http://your-host:8000`
+- Auth: Bearer, key = your `NOTMUCHPROXY_API_KEY`
+
+Open WebUI fetches `/openapi.json` (which is unauthenticated, like `/healthz`)
+to discover the tools, then sends the bearer token on each call.
+
+### Claude Code
+
+```sh
+claude mcp add --transport http notmuch http://your-host:8000/mcp/ \
+  --header "Authorization: Bearer $NOTMUCHPROXY_API_KEY"
+```
+
+### Other MCP clients
+
+Any client that speaks streamable HTTP can connect to `http://your-host:8000/mcp/`
+with the bearer token in the `Authorization` header.
 
 ## Development
 
@@ -70,12 +124,25 @@ Other tasks: `mise run fixtures` (regenerate the local dev archive),
 `mise run docker:build`, `mise run docker:test` (run the suite inside docker),
 `mise run docker:run`. See `mise tasks` for the full list.
 
+CI runs the same mise tasks, then runs the suite again inside the docker image
+(against Debian's notmuch rather than the host's) before pushing to
+`ghcr.io/igor47/notmuchproxy` on pushes to main and `v*` tags.
+
 ## Architecture notes
 
 - **notmuch access**: shells out to the `notmuch` CLI using `--format=json`
   output, via a thin wrapper in `src/notmuchproxy/notmuch.py`. No Python
   bindings, so there is no libnotmuch version-matching to worry about; the
   database path is passed via the `NOTMUCH_DATABASE` environment variable.
-- **read-only**: the API never writes to the database; mount your mail read-only.
+- **one definition, two protocols**: the FastAPI routes are the source of
+  truth; [fastmcp](https://gofastmcp.com)'s `FastMCP.from_fastapi()` converts
+  the OpenAPI schema into MCP tools at startup and dispatches tool calls to
+  the routes in-process.
 - **bodies**: `text/plain` parts are preferred; HTML-only messages get a naive
   tag-stripped rendering. Attachments are listed by filename but not served.
+- **fixtures**: `python -m notmuchproxy.fixtures <dir>` generates a small
+  synthetic maildir + notmuch index, used by the tests and `mise run dev`.
+
+## License
+
+[MIT](LICENSE)
