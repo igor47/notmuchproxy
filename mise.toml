@@ -1,5 +1,7 @@
 [tools]
-python = "3.13"
+# pin the exact patch version: vague versions can resolve to a release too new
+# to have a precompiled binary, making CI compile python from source
+python = "3.13.13"
 uv = "latest"
 
 [env]
