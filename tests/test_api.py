@@ -94,6 +94,7 @@ class TestThread:
             "planning-3@example.com",
         ]
         assert [m["depth"] for m in messages] == [0, 1, 2]
+        assert all(m["thread_id"] == thread_id for m in messages)
         assert messages[0]["sender"] == "Alice Anderson <alice@example.com>"
         assert "Let's plan Q1" in messages[0]["body"]
 
@@ -109,6 +110,7 @@ class TestMessage:
         assert body["subject"] == "Lunch tomorrow?"
         assert body["body"] == "Tacos at noon?"
         assert body["depth"] == 0
+        assert body["thread_id"]  # resolved via a separate notmuch search
 
     def test_html_body_is_stripped(self, client: TestClient) -> None:
         body = client.get("/messages/newsletter-7@example.com", headers=AUTH).json()

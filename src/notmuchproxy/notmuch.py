@@ -86,11 +86,23 @@ class Notmuch:
 
     def thread_messages(self, thread_id: str) -> list[Message]:
         """All messages in a thread, oldest first."""
-        return self._show(f"thread:{thread_id}", entire_thread=True)
+        messages = self._show(f"thread:{thread_id}", entire_thread=True)
+        for message in messages:
+            message.thread_id = thread_id
+        return messages
 
     def message(self, message_id: str) -> Message | None:
         messages = self._show(f"id:{message_id}", entire_thread=False)
-        return messages[0] if messages else None
+        if not messages:
+            return None
+        message = messages[0]
+        # notmuch show doesn't include the thread id; look it up separately
+        threads = self._run_json(
+            "search", "--output=threads", "--format=json", "--", f"id:{message_id}"
+        )
+        if threads:
+            message.thread_id = threads[0].removeprefix("thread:")
+        return message
 
     def _show(self, query: str, entire_thread: bool) -> list[Message]:
         threads = self._run_json(

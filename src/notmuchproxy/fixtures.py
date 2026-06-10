@@ -125,6 +125,7 @@ def _build_messages() -> list[EmailMessage]:
 def create_archive(dest: Path) -> Path:
     """Build the maildir under dest/mail, index it, and return the mail root."""
     dest = dest.resolve()
+    dest.mkdir(parents=True, exist_ok=True)
     mail_root = dest / "mail"
     if mail_root.exists():
         shutil.rmtree(mail_root)

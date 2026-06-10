@@ -1,0 +1,10 @@
+.git/
+.venv/
+fixtures/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.github/
+mise.local.toml
+.mise.local.toml
