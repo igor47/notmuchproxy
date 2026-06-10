@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
 
-      - name: Run checks and tests inside the image
+      - name: Build the test image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -44,7 +44,9 @@ jobs:
           tags: notmuchproxy:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - run: docker run --rm notmuchproxy:test
+      # lint/typecheck already ran in the test job; only pytest is unique here,
+      # exercising Debian's notmuch + the runtime image instead of the host's
+      - run: docker run --rm notmuchproxy:test uv run pytest
 
       - name: Log in to ghcr.io
         if: github.event_name != 'pull_request'
