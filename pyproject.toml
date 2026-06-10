@@ -8,7 +8,7 @@ authors = [{ name = "Igor Serebryany", email = "igor47@moomers.org" }]
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.34",
+    "uvicorn[standard]>=0.49.0",
     "pydantic-settings>=2.7",
     "fastmcp>=3.4.2",
 ]
