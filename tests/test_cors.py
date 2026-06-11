@@ -41,7 +41,7 @@ def test_preflight_allows_unanticipated_headers(client: TestClient) -> None:
 
 def test_preflight_mcp_needs_no_auth(client: TestClient) -> None:
     resp = client.options(
-        "/mcp/",
+        "/mcp",
         headers={
             "Origin": ORIGIN,
             "Access-Control-Request-Method": "POST",

@@ -8,8 +8,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .auth import require_api_key
-from .config import Settings, cors_origins, get_settings
+from .auth import require_auth
+from .config import Settings, check_auth_config, cors_origins, get_settings
 from .models import HealthResponse, SearchResponse, TagsResponse, Thread
 from .models import Message as MessageModel
 from .notmuch import InvalidQueryError, Notmuch, NotmuchError
@@ -17,6 +17,7 @@ from .notmuch import InvalidQueryError, Notmuch, NotmuchError
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncGenerator[None]:
+    check_auth_config()
     # mcp_app is created below, after the routes it derives its tools from
     async with mcp_app.lifespan(mcp_app):
         yield
@@ -89,7 +90,7 @@ class SortOrder(StrEnum):
     operation_id="search_email",
     summary="Search email threads",
     response_model=SearchResponse,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth)],
 )
 def search_email(
     nm: NotmuchDep,
@@ -134,7 +135,7 @@ def search_email(
     operation_id="get_thread",
     summary="Get a full email thread",
     response_model=Thread,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth)],
 )
 def get_thread(thread_id: str, nm: NotmuchDep) -> Thread:
     """Fetch every message in a thread (oldest first) with plain-text bodies.
@@ -152,7 +153,7 @@ def get_thread(thread_id: str, nm: NotmuchDep) -> Thread:
     operation_id="get_message",
     summary="Get a single email message",
     response_model=MessageModel,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth)],
 )
 def get_message(message_id: str, nm: NotmuchDep) -> MessageModel:
     """Fetch one message by its Message-ID (without angle brackets).
@@ -172,7 +173,7 @@ def get_message(message_id: str, nm: NotmuchDep) -> MessageModel:
     operation_id="list_tags",
     summary="List all tags",
     response_model=TagsResponse,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_auth)],
 )
 def list_tags(nm: NotmuchDep) -> TagsResponse:
     """List every tag in the archive; tags can be used in queries as tag:name."""
@@ -194,13 +195,22 @@ def healthz(nm: NotmuchDep) -> HealthResponse:
 from fastmcp import FastMCP  # noqa: E402
 from starlette.middleware import Middleware  # noqa: E402
 
-from .auth import BearerAuthMiddleware, InternalBearerAuth  # noqa: E402
+from .auth import MCP_AUTH, InternalBearerAuth, StaticBearerMiddleware  # noqa: E402
 
-mcp = FastMCP.from_fastapi(app=app, httpx_client_kwargs={"auth": InternalBearerAuth()})
+mcp = FastMCP.from_fastapi(
+    app=app,
+    httpx_client_kwargs={"auth": InternalBearerAuth()},
+    auth=MCP_AUTH,
+)
 mcp_app = mcp.http_app(
-    path="/",
+    path="/mcp",
     stateless_http=True,
     json_response=True,
-    middleware=[Middleware(BearerAuthMiddleware)],
+    # in OIDC mode fastmcp's own auth middleware protects /mcp
+    middleware=[] if MCP_AUTH else [Middleware(StaticBearerMiddleware)],
 )
-app.mount("/mcp", mcp_app)
+# mounted at the root (rather than mounting at /mcp) so that in OIDC mode the
+# OAuth discovery and flow endpoints (/.well-known/*, /authorize, /token,
+# /register, /auth/callback) land where clients expect them; REST routes are
+# registered above and take precedence
+app.mount("/", mcp_app)

@@ -18,7 +18,7 @@ def _rpc(client: TestClient, method: str, params: dict[str, Any] | None = None) 
     payload: dict[str, Any] = {"jsonrpc": "2.0", "id": 1, "method": method}
     if params is not None:
         payload["params"] = params
-    resp = client.post("/mcp/", headers=MCP_HEADERS, json=payload)
+    resp = client.post("/mcp", headers=MCP_HEADERS, json=payload)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "error" not in body, body
@@ -26,7 +26,7 @@ def _rpc(client: TestClient, method: str, params: dict[str, Any] | None = None) 
 
 
 def test_mcp_requires_auth(client: TestClient) -> None:
-    resp = client.post("/mcp/", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    resp = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     assert resp.status_code == 401
 
 
@@ -72,7 +72,7 @@ def test_tools_call_search(client: TestClient) -> None:
 
 def test_tools_call_invalid_query_explains_error(client: TestClient) -> None:
     resp = client.post(
-        "/mcp/",
+        "/mcp",
         headers=MCP_HEADERS,
         json={
             "jsonrpc": "2.0",

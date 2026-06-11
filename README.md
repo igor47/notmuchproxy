@@ -35,11 +35,42 @@ Everything is environment variables:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `NOTMUCHPROXY_API_KEY` | yes | the bearer token clients must present |
 | `NOTMUCH_DATABASE` | yes¹ | path to the notmuch database root (the directory containing `.notmuch`); the docker image defaults it to `/mail` |
 | `NOTMUCHPROXY_NOTMUCH_BIN` | no | notmuch executable (default: `notmuch`) |
 | `NOTMUCHPROXY_EXCLUDE_TAGS` | no | comma-separated tags (e.g. `spam,deleted`) whose messages are excluded from *all* results — searches (even explicit `tag:spam` queries), threads, single messages, and the tag list. Useful for noise and for keeping adversarial spam content away from the model. |
-| `NOTMUCHPROXY_CORS_ORIGINS` | no | comma-separated origins allowed for CORS; `*` (the default) allows any origin, empty string disables CORS. Needed when a browser calls the API directly, e.g. tool servers added in Open WebUI's *user* settings. The bearer token remains the actual access control. |
+| `NOTMUCHPROXY_CORS_ORIGINS` | no | comma-separated origins allowed for CORS; `*` (the default) allows any origin, empty string disables CORS. Needed when a browser calls the API directly, e.g. tool servers added in Open WebUI's *user* settings. The auth token remains the actual access control. |
+
+### Authentication
+
+Pick exactly one mechanism (the server refuses to start with both or neither);
+it applies to both the REST API and the MCP endpoint.
+
+**Static bearer token** — simplest; what Open WebUI's OpenAPI tool servers and
+Claude Code's `--header` flag speak. claude.ai custom connectors can *not* use
+this mode (they only support OAuth).
+
+| Variable | Description |
+| --- | --- |
+| `NOTMUCHPROXY_API_KEY` | the bearer token clients must present |
+
+**OIDC via an external identity provider** — works with any OIDC IdP
+(authentik, Keycloak, Google, ...). notmuchproxy presents a spec-compliant
+MCP authorization server to clients — including the dynamic client
+registration claude.ai requires — while acting as an ordinary OIDC client of
+your IdP upstream (your IdP does not need to support DCR itself). Tokens
+issued through the flow are accepted on both the MCP and REST endpoints.
+
+| Variable | Description |
+| --- | --- |
+| `NOTMUCHPROXY_OIDC_CONFIG_URL` | the IdP's OIDC discovery URL, e.g. `https://auth.example.com/application/o/notmuchproxy/.well-known/openid-configuration` for authentik |
+| `NOTMUCHPROXY_OIDC_CLIENT_ID` | client id of the app registered at the IdP |
+| `NOTMUCHPROXY_OIDC_CLIENT_SECRET` | client secret of that app |
+| `NOTMUCHPROXY_PUBLIC_URL` | public base URL of this server, e.g. `https://notmuch.example.com` — used for OAuth callbacks and discovery metadata; claude.ai requires HTTPS |
+
+IdP setup (authentik example): create an OAuth2/OpenID provider with a
+confidential client and redirect URI `$NOTMUCHPROXY_PUBLIC_URL/auth/callback`,
+scopes `openid profile email`. Who may authorize is controlled by your IdP's
+own policies (in authentik, bind the application to users/groups).
 
 ¹ optional if the host has a notmuch config that already points at the database.
 
@@ -88,7 +119,7 @@ read permission on the maildir is all it needs.
 
 ### Open WebUI
 
-Admin Settings → Tools → add a tool server:
+In static mode, add an OpenAPI tool server (Admin Settings → Tools):
 
 - URL: `http://your-host:8000`
 - Auth: Bearer, key = your `NOTMUCHPROXY_API_KEY`
@@ -96,22 +127,42 @@ Admin Settings → Tools → add a tool server:
 Open WebUI fetches `/openapi.json` (which is unauthenticated, like `/healthz`)
 to discover the tools, then sends the bearer token on each call.
 
+In OIDC mode, use Open WebUI's MCP tool server type instead, pointed at
+`https://your-host/mcp` with OAuth 2.1 auth — it performs the same discovery
+and login flow as claude.ai.
+
 Tool servers added under **Admin** Settings are called from the Open WebUI
 backend, but ones added in a user's own Settings → Tools are called directly
 from the browser — that path needs CORS, which is enabled for all origins by
 default (lock it down with `NOTMUCHPROXY_CORS_ORIGINS=https://your-webui-host`).
 
+### claude.ai (OIDC mode only)
+
+Settings → Connectors → Add custom connector, URL `https://your-host/mcp`.
+Claude discovers the OAuth endpoints, registers itself dynamically, and sends
+you through your IdP's login/consent in the browser. No client id/secret needs
+to be entered on the claude.ai side.
+
 ### Claude Code
 
+Static mode:
+
 ```sh
-claude mcp add --transport http notmuch http://your-host:8000/mcp/ \
+claude mcp add --transport http notmuch http://your-host:8000/mcp \
   --header "Authorization: Bearer $NOTMUCHPROXY_API_KEY"
+```
+
+OIDC mode — omit the header; Claude Code runs the OAuth flow in your browser:
+
+```sh
+claude mcp add --transport http notmuch https://your-host/mcp
 ```
 
 ### Other MCP clients
 
-Any client that speaks streamable HTTP can connect to `http://your-host:8000/mcp/`
-with the bearer token in the `Authorization` header.
+Any client that speaks streamable HTTP can connect to `http://your-host:8000/mcp`,
+authenticating with the static bearer token or the OAuth flow depending on
+the server's configured mode.
 
 ## Development
 
