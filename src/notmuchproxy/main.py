@@ -13,6 +13,7 @@ from .config import Settings, check_auth_config, cors_origins, get_settings
 from .models import HealthResponse, SearchResponse, TagsResponse, Thread
 from .models import Message as MessageModel
 from .notmuch import InvalidQueryError, Notmuch, NotmuchError
+from .query import QueryValidationError, validate_query
 
 
 @asynccontextmanager
@@ -80,6 +81,11 @@ def invalid_query_handler(request: Request, exc: InvalidQueryError) -> JSONRespo
     )
 
 
+@app.exception_handler(QueryValidationError)
+def query_validation_handler(request: Request, exc: QueryValidationError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": exc.detail})
+
+
 class SortOrder(StrEnum):
     newest_first = "newest-first"
     oldest_first = "oldest-first"
@@ -98,11 +104,17 @@ def search_email(
         str,
         Query(
             description=(
-                "notmuch query string. Plain words search message bodies and subjects. "
-                "Useful prefixes: from:alice@example.com, to:bob, subject:invoice, "
+                "notmuch query string. Plain lowercase words search message bodies "
+                'and subjects, with stemming (invoice matches invoices); "quoted '
+                'phrases" match exactly. Prefixes (lowercase only): '
+                "from:alice@example.com, to:bob (matches To/Cc/Bcc), subject:invoice, "
                 "tag:inbox, date:2024-01-01..2024-02-01 (or date:yesterday.., "
-                "date:3months..). Combine terms with 'and', 'or', 'not' and parentheses. "
-                "Use '*' to match all mail."
+                "date:3months..), attachment:pdf. Combine terms with 'and', 'or', "
+                "'not' and parentheses. Use '*' to match all mail. This is NOT Gmail "
+                "syntax: there is no status:, label:, in:, or has: — unread mail is "
+                "tag:unread. Tags are labels the user has assigned; never guess tag "
+                "names (none of urgent/important/priority exist) — discover them with "
+                "list_tags. Unknown prefixes or tags get a 400 explaining the fix."
             ),
             examples=["from:alice@example.com date:1month.. subject:invoice"],
         ),
@@ -113,14 +125,19 @@ def search_email(
 ) -> SearchResponse:
     """Search the email archive and return matching thread summaries.
 
-    Results are conversation threads, not individual messages. Use the
-    returned thread_id with get_thread to read the full conversation.
-    The response's 'total' is the full match count; if it exceeds 'limit',
-    page through with 'offset'. Tag names for tag: queries can be
-    discovered with list_tags. A search returning total=0 means nothing
-    matched — try a broader query (fewer terms, or free text instead of
-    exact subject:/from: filters).
+    Results are conversation threads, not individual messages, and contain
+    no message bodies. Use the returned thread_id with get_thread to read
+    the full conversation before summarizing or quoting it. The response's
+    'total' is the full match count; if it exceeds 'limit', page through
+    with 'offset'. Tag names for tag: queries can be discovered with
+    list_tags. A search returning total=0 means nothing matched — try a
+    broader query (fewer terms, or free text instead of exact
+    subject:/from: filters). There is no urgency or importance marker:
+    to find mail needing attention, search recent mail (e.g.
+    'tag:unread date:1week..') and judge from senders, subjects, and
+    content.
     """
+    validate_query(q, nm.list_tags)
     return SearchResponse(
         query=q,
         total=nm.count(q, output="threads"),

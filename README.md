@@ -29,6 +29,16 @@ Plus an unauthenticated `GET /healthz`. Everything else requires
 The MCP tools are derived from the OpenAPI schema at startup, so the two
 surfaces can't drift apart.
 
+Search queries are validated before they reach xapian. Unknown prefixes
+(`status:unread`), capitalized prefixes (`From:alice`), and nonexistent tags
+(`tag:handled`) would otherwise silently match nothing — to xapian they are
+just terms no message contains — so a mistyped query looks exactly like an
+empty mailbox. The proxy instead rejects them with a 400 naming the problem
+and suggesting the fix (`for unread mail use tag:unread`; `Tags in this
+archive: ...`), which is the kind of feedback LLM callers actually act on.
+`docs/email-assistant-knowledge.md` has a system-prompt blurb teaching small
+models to use the tools well.
+
 ## Configuration
 
 Everything is environment variables:

@@ -1,3 +1,4 @@
+import httpx
 from fastapi.testclient import TestClient
 
 from conftest import AUTH
@@ -80,6 +81,61 @@ class TestSearch:
         assert detail.startswith("invalid notmuch query:")
         # the xapian reason is surfaced so the caller can fix the query
         assert "date specification" in detail
+
+
+class TestQueryValidation:
+    """Unknown prefixes and tags silently match nothing in xapian; the proxy
+    rejects them with a corrective 400 instead of returning a misleading 0."""
+
+    def _search(self, client: TestClient, q: str) -> httpx.Response:
+        return client.get("/search", params={"q": q}, headers=AUTH)
+
+    def test_unknown_prefix_is_400_with_hint(self, client: TestClient) -> None:
+        resp = self._search(client, "tag:inbox and status:unread")
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert "'status:'" in detail
+        assert "tag:unread" in detail  # the gmail-ism gets a targeted correction
+
+    def test_unknown_prefix_without_hint_lists_valid_ones(self, client: TestClient) -> None:
+        resp = self._search(client, "frmo:alice")
+        assert resp.status_code == 400
+        assert "Valid prefixes" in resp.json()["detail"]
+
+    def test_capitalized_prefix_is_400(self, client: TestClient) -> None:
+        resp = self._search(client, "From:alice")
+        assert resp.status_code == 400
+        assert "lowercase" in resp.json()["detail"]
+
+    def test_nonexistent_tag_is_400_with_tag_list(self, client: TestClient) -> None:
+        resp = self._search(client, "tag:inbox and not tag:handled")
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert "'handled'" in detail
+        assert "inbox" in detail  # real tags are listed so the caller can pick one
+
+    def test_is_alias_tag_is_validated(self, client: TestClient) -> None:
+        assert self._search(client, "is:urgent").status_code == 400
+
+    def test_quoted_tag_value_is_validated(self, client: TestClient) -> None:
+        assert self._search(client, 'tag:"handled"').status_code == 400
+
+    def test_real_tags_pass(self, client: TestClient) -> None:
+        resp = self._search(client, "tag:inbox and is:unread")
+        assert resp.status_code == 200
+
+    def test_colon_text_in_quotes_passes(self, client: TestClient) -> None:
+        resp = self._search(client, '"re: budget" date:1year..')
+        assert resp.status_code == 200
+
+    def test_unquoted_colon_text_is_400(self, client: TestClient) -> None:
+        resp = self._search(client, "re: budget")
+        assert resp.status_code == 400
+        assert "double quotes" in resp.json()["detail"]
+
+    def test_regex_values_pass(self, client: TestClient) -> None:
+        resp = self._search(client, 'from:"/alice@.*[.]example[.]com/"')
+        assert resp.status_code == 200
 
 
 class TestThread:

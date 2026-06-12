@@ -17,10 +17,12 @@ def test_excluded_from_search_all(exclude_client: TestClient) -> None:
     assert all("lottery" not in t["subject"].lower() for t in body["threads"])
 
 
-def test_explicit_tag_query_returns_nothing(exclude_client: TestClient) -> None:
-    body = exclude_client.get("/search", params={"q": "tag:spam"}, headers=AUTH).json()
-    assert body["total"] == 0
-    assert body["threads"] == []
+def test_explicit_tag_query_is_rejected(exclude_client: TestClient) -> None:
+    # excluded tags are hidden from list_tags, so query validation treats them
+    # as nonexistent: an instructive 400 rather than a misleading empty result
+    resp = exclude_client.get("/search", params={"q": "tag:spam"}, headers=AUTH)
+    assert resp.status_code == 400
+    assert "spam" not in resp.json()["detail"].split("Tags in this archive: ")[1]
 
 
 def test_excluded_message_is_404(exclude_client: TestClient) -> None:
